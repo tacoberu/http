@@ -1,5 +1,5 @@
 {
-    "name": "taco/http",
+    "name": "tacoberu/http",
     "description": "Simple http client for PHP wrapered Curl extension.",
     "require": {
     	"php" : ">=5.3.0"

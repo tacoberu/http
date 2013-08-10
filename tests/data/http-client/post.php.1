@@ -1,0 +1,39 @@
+<?php
+
+if (isset($_GET['D'])) {
+	echo '<body>' . PHP_EOL;
+	switch ($_GET['D']) {
+		case 'cookies':
+			print_r($_COOKIE);
+			break;
+		default:
+			echo '<error>Unknow command</error>' . PHP_EOL;
+	}
+}
+else {
+	session_start();
+	echo '<body>' . PHP_EOL;
+}
+?>
+<p><?php
+echo session_name();
+?></p>
+<p><?php
+echo session_id();
+?></p>
+<p>
+<?php
+echo SID;
+?>
+</p>
+<p>Vytvořena session.</p>
+
+<p><?php
+print_r($_SESSION);
+$_SESSION['count'] = (isset($_SESSION['count']) ? $_SESSION['count'] + 1 : 1);
+$_SESSION['jedna'] = 'Lorem ipsum doler ist.';
+?></p>
+
+
+</body>
+

@@ -136,6 +136,15 @@ class HttpRequest
 
 
 
+	/**
+	 *	Náhled požadavku.
+	 */
+	public function __toString()
+	{
+		return 'GET: ' . $this->prepareUri() 
+			. "\nPOST: " . $this->preparePostData();
+	}
+
 
 
 	/**
@@ -268,42 +277,27 @@ class HttpRequest
 #		$totaltime = curl_getinfo($ch, CURLINFO_TOTAL_TIME);
 		curl_close ($ch);
 
-/*
-#followLocation = počet přesměrování
-		if ($http_code == 301 
-		|| $http_code == 302) {
-			$location_index = strpos($content, 'ocation:');
-			if ($location_index) {
-				$location_index += 9;
-				$to_url = substr($content, $location_index, strpos($content, "\r", $location_index) - $location_index);
-				//		Jedna se neabsolutni cestu.
-				if ('/' == $to_url[0]) {
-					$url = substr($url, 0, strpos($url, '/', strpos($url, '://') + 3)) . $to_url;
-				}
-				else {
-					$url = $to_url;
-				}
-			}
-			else {
-				throw new Exception($url, 1);
-			}
-
-			if (9 > $count) {
-				$this->url = $url;
-				return $this->sendRequestGet(++$count);
-			}
-			//	Toto funguje?!!!!
-			$this->url = $url;
-			return $this->sendRequestGet(++$count);
-		}
-
-		if (!$totaltime 
-		&& !$http_code) {
-			$http_code = 590;
-		}
-*/
 		try {
-			return $this->createResponse($content, $http_code);
+			$response = $this->createResponse($content, $http_code);
+			if (9 > $count) {
+				switch ($response->status->code) {
+					case 301:
+					case 302:
+						foreach ($response->headers as $row) {
+							if (substr(strtolower($row), 0, 9) == 'location:') {
+								$url = trim(substr($row, 9));
+								//		Jedna se neabsolutni cestu.
+								if (!strpos($url, '://')) {
+									$url = substr($response->url, 0, strpos($response->url, '/', strpos($response->url, '://') + 3)) . $url;
+								}
+							}
+						}
+						$this->domain = $url;
+						$response = $this->sendRequestGet(++$count);
+						break;
+				}
+			}
+			return $response;
 		}
 		catch (\RuntimeException $e) {
 			if (self::MAX_ATTEMPT > $count) {
@@ -372,7 +366,7 @@ class HttpRequest
 	private function createResponse($content, $http_code)
 	{
 		if (empty($content)) {
-			throw new \RuntimeException('Empty content.');
+			throw new \RuntimeException('Empty content [' . $this->url . ']');
 		}
 
 		while (substr($content, 0, 4) == 'HTTP') {

@@ -102,6 +102,29 @@ class HttpResponse
 
 
 	/**
+	 * Vybere hlevičku vyjma té první HTTP/1.1 302 Found
+	 *
+	 * @param string $name Jméno hlavičky
+	 * @return array Seznam hlaviček odpovídající jménu.
+	 */
+	public function getHeadersByName($name)
+	{
+		$name = strtolower($name);
+		$result = array();
+		foreach ($this->headers as $header) {
+			if (strpos($header, ':')) {
+				list ($key, $content) = explode(':', $header, 2);
+				if ($name == strtolower($key)) {
+					$result[] = trim($content);
+				}
+			}
+		}
+		return $result;
+	}
+
+
+
+	/**
 	 * Sets content with Content-type and charset.
 	 * @param  string  content
 	 *

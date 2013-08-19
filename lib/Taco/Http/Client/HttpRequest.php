@@ -23,6 +23,7 @@ class ResponseException extends \RuntimeException
 	const PUT = 30;
 	const DELETE = 40;
 
+
 	public $content;
 	public $info;
 
@@ -49,6 +50,56 @@ class ResponseException extends \RuntimeException
 
 
 /**
+ * Chybný dotaz.
+ */
+class FailedRequestException extends \RuntimeException
+{
+
+	/**
+	 * Available types of requests
+	 */
+	public $method;
+
+	/**
+	 * Request url.
+	 */
+	public $url;
+
+	/**
+	 * Sending data.
+	 */
+	public $data;
+
+	/**
+	 * About comunication.
+	 */
+	public $info = array();
+
+
+	/**
+	 * Vrácena špatná, nezpracovatelná odpověď.
+	 *
+	 * @param $content Obsah odpovědi.
+	 * @param $info Informace o komunikaci.
+	 * @param message Text zprávy.
+	 * @param $code Kod zprávy.
+	 * @param $e původní výjimka.
+	 */
+	public function __construct($method, $url, $data, array $info, $message = '', $code = 0, $e = Null)
+	{
+		$this->method = $method;
+		$this->url = $url;
+		$this->data = $data;
+		$this->info = $info;
+		parent::__construct($message, $code, $e);
+	}
+
+}
+
+
+
+
+/**
  *	Požadavek na data serveru.
  *
  *	@author	 Martin Takáč <taco@taco-beru.name>
@@ -57,9 +108,20 @@ class HttpRequest
 {
 
 	/**
+	 * Available types of requests
+	 */
+	const GET = 'GET';
+	const POST = 'POST';
+	const PUT = 'PUT';
+	const DELETE = 'DELETE';
+	const HEAD = 'HEAD';
+	const DOWNLOAD = 'DOWNLOAD';
+
+
+	/**
 	 *	Maximální počet pokusů ze špatného dotazu.
 	 */
-	const MAX_ATTEMPT = 9;
+	const FAULT_TOLERANCE = 9;
 	
 
 	/**
@@ -100,7 +162,7 @@ class HttpRequest
 	/**
 	 *	Hlavičky dotazu.
 	 */
-	public $headers = array();
+	private $headers = array();
 
 
 
@@ -114,20 +176,46 @@ class HttpRequest
 	/**
 	 *	Následovat přesměrování? Automaticky přesměrovávat?
 	 */
-	public $followLocation = True;
+	public $followRedirects = True;
+
+
+
+	/**
+	 * Maximální počet přesměrování.
+	 */
+	public $maxRedirects = 15;
+
+
+
+	/**
+	 * Maximální počet přesměrování.
+	 */
+	public $faultTolerance = self::FAULT_TOLERANCE;
+
+
+
+	/**
+	 * Nastavení CURL.
+	 */
+	private $options = array();
 
 
 
 	/**
 	 *	Vytvoření požadavku.
+	 *	@param HttpSession $session
+	 *	@param string $domain Doménová adresa.
+	 *
+	 *	@throw InvalidArgumentException
 	 */
-	public function __construct($session, $domain)
+	public function __construct(HttpSession $session, $domain)
 	{
 		if (empty($domain)) {
 			throw new \InvalidArgumentException('Empty domain.');
 		}
 		$this->session = $session;
 		$this->domain = $domain;
+		$this->timeout = $session->timeout;
 		$this->status = (object) array (
 				'code' => 200,
 				'message' => ''
@@ -141,8 +229,8 @@ class HttpRequest
 	 */
 	public function __toString()
 	{
-		return 'GET: ' . $this->prepareUri() 
-			. "\nPOST: " . $this->preparePostData();
+		return 'GET: ' . $this->prepareUri()
+			. "\nPOST: " . self::preparePostData($this->posts);
 	}
 
 
@@ -190,6 +278,61 @@ class HttpRequest
 
 
 	/**
+	 * Sets option for request
+	 *
+	 * @param string $option
+	 * @param string $value
+	 *
+	 * @return HttpRequest
+	 */
+	public function setOption($option, $value)
+	{
+		$option = str_replace('CURLOPT_', '', strtoupper($option));
+		$this->options[$option] = $value;
+
+		if ($option === 'MAXREDIRS') {
+			$this->maxRedirects = $value;
+		}
+
+		return $this;
+	}
+
+
+
+	/**
+	 * Returns specific option value
+	 * @param string $option
+	 * @return string
+	 */
+	public function getOption($option)
+	{
+		$option = str_replace('CURLOPT_', '', strtoupper($option));
+		if (isset($this->options[$option])) {
+			return $this->options[$option];
+		}
+
+		return Null;
+	}
+
+
+
+	/**
+	 * The maximum number of seconds to allow cURL functions to execute.
+	 *
+	 * @param int
+	 *
+	 * @return HttpRequest
+	 */
+	public function setTimeOut($seconds = 15)
+	{
+		$this->timeout = (int)$seconds;
+		$this->setOption('timeout', $this->timeout);
+		return $this;
+	}
+
+
+
+	/**
 	 *	Odeslat požadavek jako GET
 	 *
 	 *	@return Taco\Http\Client\HttpResponse
@@ -210,28 +353,52 @@ class HttpRequest
 	 */
 	public function post()
 	{
-		$response = $this->sendRequestPost();
-		$this->applyHeaders($response);
-		return $response;
+		$url = $this->prepareUri();
+		$data = $this->posts;
+
+		if (!$data /* || !is_array($data) */ ){
+			throw new \RuntimeException("Empty data fields, use Request::get(\$url) instead.");
+		}
+
+		return $this->sendRequest(self::POST, $url, $data);
 	}
 
 
 
 	/**
-	 *	Zapíše hlavičky z odpovědi do session.
+	 *	Odeslat požadavek jako PUT
+	 *
+	 *	@return Taco\Http\Client\HttpResponse
 	 */
-	private function applyHeaders(HttpResponse $response)
+	public function put()
 	{
-		foreach ($response->headers as $head) {
-			$var = explode(':', $head, 2);
-			switch (strtolower($var[0])) {
-				case 'set-cookie':
-					$chip = explode(';', $var[1]);
-					$par = explode('=', $chip[0], 2);
-					$this->session->setCookie($par[0], $par[1]);
-					break;
-			}
+		$url = $this->prepareUri();
+		$data = $this->posts;
+
+		if (!$data /* || !is_array($data) */ ){
+			throw new \RuntimeException("Empty data fields, use Request::get(\$url) instead.");
 		}
+
+		return $this->sendRequest(self::PUT, $url, $data);
+	}
+
+
+
+	/**
+	 * Makes a HTTP DELETE request to the specified $url with an optional array or string of $vars
+	 * Returns a Response object if the request was successful, false otherwise
+	 *
+	 * @param string    [optional] $url
+	 * @param array $post
+	 *
+	 * @return HttpResponse
+	 */
+	public function delete()
+	{
+		$url = $this->prepareUri();
+		$data = $this->posts;
+
+		return $this->sendRequest(self::DELETE, $url, $data);
 	}
 
 
@@ -247,6 +414,202 @@ class HttpRequest
 	{
 		$this->headers[] = trim($key) . ': ' . trim($value);
 		return $this;
+	}
+
+
+
+	//	PROTECTED
+
+
+
+	/**
+	 * Makes an HTTP request of the specified $method to a $url with an optional array or string of $vars
+	 * Returns a Curl\Response object if the request was successful, false otherwise
+	 *
+	 * @param string $method
+	 * @param string $url
+	 * @param array $data
+	 * @param int $cycles
+	 *
+	 * @throws RuntimeException
+	 * @throws InvalidArgumentException
+	 * @throws BadStatusException
+	 * @throws FailedRequestException
+	 *
+	 * @return HttpResponse
+	 */
+	protected function sendRequest($method, $url, $data = array(), $cycles = 0)
+	{
+		if ($cycles > $this->maxRedirects) {
+			throw new \RuntimeException("Redirect loop");
+		}
+
+#		$this->Error = NULL;
+#		$used_proxies = 0;
+
+		if (!is_string($url) && $url !== '') {
+			throw new \InvalidArgumentException("Invalid URL: [$url].");
+		}
+
+#		do {
+			$resource = curl_init($url);
+
+			//$this->tryProxy($used_proxies++);
+			$this->setRequestMethod($resource, $method);
+			$this->setRequestOptions($resource, $url, $data);
+			$this->setRequestHeaders($resource);
+			$this->setRequestSession($resource);
+
+			$response = curl_exec($resource);
+
+			$errorno = curl_errno($resource);
+			$errormsg = curl_error($resource);
+			$info = curl_getinfo($resource);
+#		}
+#		while ($error == 6 && count($this->proxies) < $used_proxies);
+
+		curl_close($resource);
+
+		if ($response || ! $errorno) {
+			$response = $this->createResponse($response, $info);
+			$response->url = $url;
+		}
+		else {
+			if ($this->faultTolerance > $cycles) {
+				return $this->sendRequest($method, $url, $data, ++$cycles);
+			}
+			throw new FailedRequestException($method, $url, $data, $info, $errormsg, $errorno);
+		}
+
+/*
+		if (!in_array($response->getHeader('Status-Code'), self::$badStatusCodes)) {
+			$response_headers = $response->getHeaders();
+
+			if (isset($response_headers['Location']) && $this->getFollowRedirects())  {
+				$url = static::fixUrl($this->info['url'], $response_headers['Location']);
+
+				if ($this->tryConfirmRedirect($response)) {
+					$response = $this->sendRequest($this->getMethod(), (string)$url, $post, ++$cycles);
+				}
+			}
+
+		} else {
+			throw new BadStatusException('Response status: '.$response->getHeader('Status'), $this->info['http_code'], $response);
+		}
+*/
+
+		//	Zaznamenat cookies
+		$this->applyHeaders($response);
+
+		return $response;
+	}
+
+
+
+	/**
+	 * Set the associated Curl options for a request method
+	 * @param string $method
+	 */
+	protected function setRequestMethod($resource, $method)
+	{
+		$method = strtoupper($method);
+		switch ($method) {
+			case self::HEAD:
+				$this->setOption('nobody', TRUE);
+				break;
+
+			case self::GET:
+			case self::DOWNLOAD:
+				$this->setOption('httpget', TRUE);
+				break;
+
+			case self::POST:
+				$this->setOption('post', TRUE);
+				break;
+
+//			case self::UPLOAD_FTP:
+//				$this->setOption('upload', TRUE);
+//				break;
+
+			default:
+				$this->setOption('customrequest', $method);
+				break;
+		}
+	}
+
+
+
+
+	/**
+	 *
+	 * @param
+	 */
+	protected function setRequestSession($resource)
+	{
+		if (count($this->session->cookies)) {
+			curl_setopt($resource, CURLOPT_COOKIE, http_build_query($this->session->cookies, '', '; '));
+		}
+	}
+
+
+
+
+	/**
+	 * Sets the CURLOPT options for the current request
+	 *
+	 * @param string $url
+	 */
+	protected function setRequestOptions($resource, $url, $post = Null)
+	{
+		$this->setOption('url', $url);
+
+		$post = self::preparePostData($post);
+		if ($post) {
+			$this->setOption('postfields', $post);
+		}
+
+		// Prepend headers in response
+		$this->setOption('header', True); // this makes me literally cry sometimes
+
+		// Sets whether return result page
+		$this->setOption('returntransfer', True);
+
+		// we shouldn't trust to all certificates but we have to!
+		if ($this->getOption('ssl_verifypeer') === Null) {
+			$this->setOption('ssl_verifypeer', False);
+		}
+
+		// fix:Sairon http://forum.nette.org/cs/profile.php?id=1844 thx
+		if ($this->followRedirects === NULL && !$this->safeMode() && ini_get('open_basedir') == ""){
+			$this->followRedirects = TRUE;
+		}
+
+		// Set all cURL options
+		foreach ($this->options as $name => $value) {
+			if ($name == "FOLLOWLOCATION" && ( $this->safeMode() || ini_get('open_basedir') != "" )) {
+				continue;
+			}
+			curl_setopt($resource, constant('CURLOPT_' . $name), $value);
+		}
+	}
+
+
+
+	/**
+	 * Formats and adds custom headers to the current request
+	 */
+	protected function setRequestHeaders($resource)
+	{
+		$headers = array();
+		foreach ($this->headers as $key => $value) {
+			$headers[] = $value;
+		}
+
+		if (count($this->headers) > 0) {
+			curl_setopt($resource, CURLOPT_HTTPHEADER, $headers);
+		}
+
+		return $headers;
 	}
 
 
@@ -273,12 +636,14 @@ class HttpRequest
 		//		Ziskame data dotazem na server.
 		$content = curl_exec($ch);
 		$info = curl_getinfo($ch);
-		$http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+		$errorno = curl_errno($ch);
+		$errormsg = curl_error($ch);
+#		$http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 #		$totaltime = curl_getinfo($ch, CURLINFO_TOTAL_TIME);
 		curl_close ($ch);
 
 		try {
-			$response = $this->createResponse($content, $http_code);
+			$response = $this->createResponse($content, $info);
 			if (9 > $count) {
 				switch ($response->status->code) {
 					case 301:
@@ -300,73 +665,46 @@ class HttpRequest
 			return $response;
 		}
 		catch (\RuntimeException $e) {
-			if (self::MAX_ATTEMPT > $count) {
+			if ($this->faultTolerance > $count) {
 				return $this->sendRequestGet(++$count);
 			}
-			throw new ResponseException(
-					$content, // Obsah odpovědi
-					$info,	  // Informace o komunikaci.
-					$e->getMessage(),
-					ResponseException::GET,
-					$e // původní výjimka
-					);
+			throw new FailedRequestException(self::GET, $this->url, $content, $info, $errormsg, $errorno, $e);
 		}
 	}
+
+
+
+	//	PRIVATE
 
 
 
 	/**
-	 *		Volani serveru.
+	 *	Zapíše hlavičky z odpovědi do session.
 	 */
-	protected function sendRequestPost($count = 0)
+	private function applyHeaders(HttpResponse $response)
 	{
-		$ch = curl_init($this->url = $this->prepareUri());
-		curl_setopt($ch, CURLOPT_RETURNTRANSFER, True);
-		curl_setopt($ch, CURLOPT_HEADER, True); //		Zajimaji nas i hlavicky.
-		curl_setopt($ch, CURLOPT_POST, True);
-		
-		$data = $this->preparePostData();
-		curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
-#		curl_setopt($ch, CURLOPT_FOLLOWLOCATION, True);
-		if (count($this->session->cookies)) {
-			curl_setopt($ch, CURLOPT_COOKIE, $this->prepareCookiesData());
-		}
-		if (count($this->headers) > 0) {
-			curl_setopt($ch, CURLOPT_HTTPHEADER, $this->headers);
-		}
-
-		$content = curl_exec($ch);
-		$response = curl_getinfo($ch);
-		$http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-#		$totaltime = curl_getinfo($ch, CURLINFO_TOTAL_TIME); 
-		curl_close ($ch);
-
-		try {
-			return $this->createResponse($content, Null);
-		}
-		catch (\RuntimeException $e) {
-			if (self::MAX_ATTEMPT > $count) {
-				return $this->sendRequestPost(++$count);
+		foreach ($response->headers as $head) {
+			$var = explode(':', $head, 2);
+			switch (strtolower($var[0])) {
+				case 'set-cookie':
+					$chip = explode(';', $var[1]);
+					$par = explode('=', $chip[0], 2);
+					$this->session->setCookie($par[0], $par[1]);
+					break;
 			}
-			throw new ResponseException(
-					$content, // Obsah odpovědi
-					$info,	  // Informace o komunikaci.
-					$e->getMessage(),
-					ResponseException::POST,
-					$e // původní výjimka
-					);
 		}
 	}
+
 
 
 
 	/**
 	 *	Vytvorit objekt s odpovedi.
 	 */
-	private function createResponse($content, $http_code)
+	private function createResponse($content, array $info)
 	{
 		if (empty($content)) {
-			throw new \RuntimeException('Empty content [' . $this->url . ']');
+			throw new \RuntimeException('Empty response content [' . $this->url . ']');
 		}
 
 		while (substr($content, 0, 4) == 'HTTP') {
@@ -390,8 +728,7 @@ class HttpRequest
 #			throw new \Exception("V hlavicce je jina httpcode [{$vars[1]}], nez co vratil curl_getinfo() [$http_code].");
 #		}
 		if (count($vars) != 3) {
-			print_r($vars);
-			throw new \RuntimeException("Obsah [{$headers[0]}] nelze rozdělit na správné díly.");
+			throw new \RuntimeException("Invalid response content.");
 		}
 		$response = new HttpResponse($vars[0], $vars[1], $vars[2]);
 		$response->url = $this->url;
@@ -410,7 +747,7 @@ class HttpRequest
 	 */
 	private function prepareUri()
 	{
-		if ($data = $this->prepareGetData()) {
+		if ($data = self::prepareGetData($this->gets)) {
 			return $this->domain
 				. '?'
 				. $data;
@@ -423,9 +760,9 @@ class HttpRequest
 	/**
 	 *	Zpracování get dat do řetězce.
 	 */
-	private function prepareGetData()
+	private static function prepareGetData(array $gets)
 	{
-		return http_build_query($this->gets);
+		return http_build_query($gets);
 	}
 
 
@@ -433,12 +770,12 @@ class HttpRequest
 	/**
 	 *	Zpracování post dat do pole.
 	 */
-	private function preparePostData()
+	private static function preparePostData($posts)
 	{
-		if (is_array($this->posts)) {
-			return http_build_query($this->posts);
+		if (is_array($posts)) {
+			return http_build_query($posts, '', '&');
 		}
-		return $this->posts;
+		return $posts;
 	}
 
 

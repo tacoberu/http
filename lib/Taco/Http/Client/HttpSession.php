@@ -30,6 +30,12 @@ class HttpSession
 
 
 	/**
+	 *	Tolerovaný timeout.
+	 */
+	public $timeout = 2;
+
+
+	/**
 	 * @return Taco\Http\Client\IHttpRequest
 	 */
 	public function createRequest($url)

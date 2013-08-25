@@ -1,6 +1,8 @@
 http
 ====
 
+Status BETA. Don't using!
+
 Simple http client for PHP wrapered Curl extension.
 
 

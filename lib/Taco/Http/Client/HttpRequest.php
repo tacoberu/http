@@ -732,7 +732,7 @@ class HttpRequest
 		}
 		$response = new HttpResponse($vars[0], $vars[1], $vars[2]);
 		$response->url = $this->url;
-		$response->setContent(trim($content));
+		$response->setContent($content);
 		foreach ($headers as $header) {
 			$response->addHeader($header);
 		}

@@ -1,22 +1,17 @@
 <?php
-
 /**
- * Description of Client of http
- *
- * PHP version 5.3
- *
- * @author     Martin Takáč <taco@taco-beru.name>
- * @copyright  Copyright (c) 2010 Martin Takáč
+ * Copyright (c) since 2004 Martin Takáč
+ * @author Martin Takáč <martin@takac.name>
  */
 
 namespace Taco\Http\Client;
 
 
-
 /**
- *	Odpověď serveru.
+ * Odpověď serveru.
  *
- *	@author     Martin Takáč <taco@taco-beru.name>
+ * @author Martin Takáč <martin@takac.name>
+ * @credits Filip Procházka <filip@prochazka.su>
  */
 class HttpResponse
 {
@@ -33,8 +28,8 @@ class HttpResponse
 	 *	Status odpovědi.
 	 */
 	public $status;
-	
-	
+
+
 
 	/**
 	 *	Hlavičky odpovědi.
@@ -87,14 +82,14 @@ class HttpResponse
 						case 'charset':
 							$this->content->charset = trim($var2[1]);
 							break;
-							
+
 						default:
 							throw new \Exception("Unknow chunk for content-type [{$var2[0]}] => [$header].");
 					}
 				}
 				break;
 		}
-		
+
 		$this->headers[] = $header;
 		return $this;
 	}

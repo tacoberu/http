@@ -1,12 +1,7 @@
 <?php
-
 /**
- * Description of Client of http
- *
- * PHP version 5.3
- *
- * @author	 Martin Takáč <taco@taco-beru.name>
- * @copyright  Copyright (c) 2010 Martin Takáč
+ * Copyright (c) since 2004 Martin Takáč
+ * @author Martin Takáč <martin@takac.name>
  */
 
 namespace Taco\Http\Client;
@@ -100,9 +95,10 @@ class FailedRequestException extends \RuntimeException
 
 
 /**
- *	Požadavek na data serveru.
+ * Požadavek na data serveru.
  *
- *	@author	 Martin Takáč <taco@taco-beru.name>
+ * @author Martin Takáč <martin@takac.name>
+ * @credits Filip Procházka <filip@prochazka.su>
  */
 class HttpRequest
 {
@@ -122,7 +118,7 @@ class HttpRequest
 	 *	Maximální počet pokusů ze špatného dotazu.
 	 */
 	const FAULT_TOLERANCE = 9;
-	
+
 
 	/**
 	 *	Seznam GET parametrů.
@@ -142,7 +138,7 @@ class HttpRequest
 	 *	Mateřská relace clienta.
 	 */
 	private $session;
-	
+
 
 
 	/**
@@ -625,7 +621,7 @@ class HttpRequest
 #		curl_setopt($ch, CURLOPT_NOBODY, True); //		Naopak telo ne.
 #		curl_setopt($ch, CURLOPT_FOLLOWLOCATION, True); //		Následovat presmerovani
 		curl_setopt($ch, CURLOPT_TIMEOUT, $this->timeout);
-		
+
 		if (count($this->session->cookies)) {
 			curl_setopt($ch, CURLOPT_COOKIE, $this->prepareCookiesData());
 		}
@@ -741,7 +737,7 @@ class HttpRequest
 	}
 
 
-	
+
 	/**
 	 *	Pripravi url vcetne parametru z getu.
 	 */

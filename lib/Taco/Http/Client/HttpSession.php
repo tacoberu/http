@@ -1,22 +1,16 @@
 <?php
-
 /**
- * Description of Client of http
- *
- * PHP version 5.3
- *
- * @author     Martin Takáč <taco@taco-beru.name>
- * @copyright  Copyright (c) 2010 Martin Takáč
+ * Copyright (c) since 2004 Martin Takáč
+ * @author Martin Takáč <martin@takac.name>
  */
 
 namespace Taco\Http\Client;
 
 
-
 /**
- *	Jednoduchý klient pro komunikaci s http serverem.
+ * Držíme session - cookies, auth, etc.
  *
- *	@author     Martin Takáč <taco@taco-beru.name>
+ * @author Martin Takáč <martin@takac.name>
  */
 class HttpSession
 {
